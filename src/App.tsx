@@ -46,7 +46,6 @@ function limparSecoesVazias(inpText: string): string {
   const resultado: string[] = [];
 
   let dentroDeSecao = false;
-  let secaoAtual = '';
   let bufferSecao: string[] = [];
 
   function salvarSecaoSeValida() {
@@ -61,7 +60,6 @@ function limparSecoesVazias(inpText: string): string {
     if (linha.trim().startsWith('[') && linha.trim().endsWith(']')) {
       if (bufferSecao.length > 0) salvarSecaoSeValida();
       dentroDeSecao = true;
-      secaoAtual = linha.trim();
     }
 
     if (dentroDeSecao) {
@@ -75,6 +73,7 @@ function limparSecoesVazias(inpText: string): string {
 
   return resultado.join('\n');
 }
+
 
 // Garante seções obrigatórias para o EPANET-WASM
 function garantirSecoesObrigatorias(inp: string): string {
