@@ -104,6 +104,7 @@ function normalizarINP(original: string): string {
   return completo;
 }
 
+
 function App() {
   const [output, setOutput] = useState('');
 
