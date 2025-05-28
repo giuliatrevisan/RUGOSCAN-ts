@@ -6,11 +6,10 @@ import {
   LinkProperty
 } from 'epanet-js';
 
-// Função que corrige a seção [PIPES] inserindo rugosidade padrão onde faltar
+// Corrige a seção [PIPES]
 function corrigirRugosidadeINP(inpText: string, valorPadrao: number = 100): string {
   const linhas = inpText.split(/\r?\n/);
   const resultado: string[] = [];
-
   let dentroDePipes = false;
 
   for (let linha of linhas) {
@@ -24,18 +23,85 @@ function corrigirRugosidadeINP(inpText: string, valorPadrao: number = 100): stri
 
     if (dentroDePipes && linhaTrim && !linhaTrim.startsWith(';')) {
       const partes = linha.trim().split(/\s+/);
-
-      // Esperado: ID Node1 Node2 Length Diameter Roughness MinorLoss Status
-      if (partes.length === 7) {
-        partes.splice(5, 0, valorPadrao.toString()); // Insere rugosidade na posição correta
-        linha = partes.join(' ');
-      }
+      const id = partes[0] ?? '';
+      const node1 = partes[1] ?? '';
+      const node2 = partes[2] ?? '';
+      const length = partes[3] ?? '0';
+      const diameter = partes[4] ?? '100';
+      const roughness = partes[5] ?? valorPadrao.toString();
+      const minorLoss = partes[6] ?? '0.0';
+      const status = partes[7] ?? 'Open';
+      linha = [id, node1, node2, length, diameter, roughness, minorLoss, status].join(' ');
     }
 
     resultado.push(linha);
   }
 
   return resultado.join('\n');
+}
+
+// Remove seções que estão vazias ou só têm comentários
+function limparSecoesVazias(inpText: string): string {
+  const linhas = inpText.split(/\r?\n/);
+  const resultado: string[] = [];
+
+  let dentroDeSecao = false;
+  let secaoAtual = '';
+  let bufferSecao: string[] = [];
+
+  function salvarSecaoSeValida() {
+    const linhasValidas = bufferSecao.filter(l => l.trim() !== '' && !l.trim().startsWith(';'));
+    if (linhasValidas.length > 1) {
+      resultado.push(...bufferSecao);
+    }
+    bufferSecao = [];
+  }
+
+  for (let linha of linhas) {
+    if (linha.trim().startsWith('[') && linha.trim().endsWith(']')) {
+      if (bufferSecao.length > 0) salvarSecaoSeValida();
+      dentroDeSecao = true;
+      secaoAtual = linha.trim();
+    }
+
+    if (dentroDeSecao) {
+      bufferSecao.push(linha);
+    } else {
+      resultado.push(linha);
+    }
+  }
+
+  if (bufferSecao.length > 0) salvarSecaoSeValida();
+
+  return resultado.join('\n');
+}
+
+// Garante seções obrigatórias para o EPANET-WASM
+function garantirSecoesObrigatorias(inp: string): string {
+  const secoesObrigatorias = [
+    '[OPTIONS]',
+    '[REPORT]',
+    '[TIMES]',
+    '[ENERGY]'
+  ];
+  const jaIncluidas = new Set(inp.match(/\[(.*?)\]/g)?.map(s => s.toUpperCase()) || []);
+  let textoFinal = inp;
+
+  for (const secao of secoesObrigatorias) {
+    if (!jaIncluidas.has(secao)) {
+      textoFinal = textoFinal.replace(/\[END\]/i, `${secao}\n; (auto)\n\n[END]`);
+    }
+  }
+
+  return textoFinal;
+}
+
+// Função completa de normalização
+function normalizarINP(original: string): string {
+  const comRugosidade = corrigirRugosidadeINP(original);
+  const limpo = limparSecoesVazias(comRugosidade);
+  const completo = garantirSecoesObrigatorias(limpo);
+  return completo;
 }
 
 function App() {
@@ -47,7 +113,7 @@ function App() {
 
     try {
       const text = await file.text();
-      const inpCorrigido = corrigirRugosidadeINP(text); // Aplica correção automática
+      const inpCorrigido = normalizarINP(text);
 
       const workspace = new Workspace();
       await workspace.loadModule();
