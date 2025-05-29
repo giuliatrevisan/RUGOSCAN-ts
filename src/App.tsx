@@ -6,6 +6,22 @@ import {
   LinkProperty,
   NodeProperty
 } from 'epanet-js';
+import {
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
+  Typography, Box
+} from '@mui/material';
+
+
+interface LinhaTabela {
+  id: string;
+  node1: string;
+  node2: string;
+  length: number;
+  diameter: number;
+  roughness: number;
+  flow: number;
+  pressure: number;
+}
 
 // Corrige a seção [PIPES]
 function corrigirRugosidadeINP(inpText: string, valorPadrao: number = 100): string {
@@ -96,8 +112,10 @@ function normalizarINP(original: string): string {
   return completo;
 }
 
+
 function App() {
-  const [output, setOutput] = useState<string>('');
+  const [dados, setDados] = useState<LinhaTabela[]>([]);
+  const [erro, setErro] = useState<string>('');
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -117,21 +135,10 @@ function App() {
       await project.solveH();
 
       const numLinks = await project.getCount(CountType.LinkCount);
-      let result = `RELATÓRIO DE TUBOS\n\n`;
-      result += `| ID        | Node1    | Node2    | Comprimento | Diâmetro | Rugosidade | Vazão    | Pressão (Node1) |\n`;
-      result += `|-----------|----------|----------|-------------|----------|------------|----------|-----------------|\n`;
+      const linhas: LinhaTabela[] = [];
 
       for (let i = 1; i <= numLinks; i++) {
         const id = await project.getLinkId(i);
-        const tipo = await project.getLinkType(i);
-
-        // Debug - mostra os tipos dos links para entender o que está vindo
-        console.log(`Link ${i}: ID=${id}, Tipo=${tipo}`);
-
-        // Retira temporariamente o filtro para tipo (para ver se preenche)
-        // Se quiser filtrar só pipes, descomente abaixo:
-        // if (tipo !== 0) continue;
-
         const nodes = await project.getLinkNodes(i);
         const length = await project.getLinkValue(i, LinkProperty.Length) ?? 0;
         const diameter = await project.getLinkValue(i, LinkProperty.Diameter) ?? 0;
@@ -139,38 +146,108 @@ function App() {
         const flow = await project.getLinkValue(i, LinkProperty.Flow) ?? 0;
         const pressureNode1 = await project.getNodeValue(nodes.node1, NodeProperty.Pressure) ?? 0;
 
-        result += `| ${id.padEnd(9)} | ${nodes.node1.toString().padEnd(8)} | ${nodes.node2.toString().padEnd(8)} | ${length.toFixed(2).padStart(11)} | ${diameter.toFixed(2).padStart(8)} | ${roughness.toFixed(2).padStart(10)} | ${flow.toFixed(2).padStart(8)} | ${pressureNode1.toFixed(2).padStart(15)} |\n`;
+        linhas.push({
+          id,
+          node1: String(nodes.node1),
+          node2: String(nodes.node2),
+          length,
+          diameter,
+          roughness,
+          flow,
+          pressure: pressureNode1
+        });
+        
       }
 
-      result += `\nTotal de tubos: ${numLinks}`;
-
       await project.close();
-      setOutput(result);
-
+      setErro('');
+      setDados(linhas);
     } catch (err: any) {
-      setOutput(`❌ Erro ao processar o arquivo .INP:\n\n${err.message}\n\n📌 Verifique se o arquivo está no formato correto do EPANET.\nExemplo: deve conter as seções [JUNCTIONS], [PIPES], [END] etc.`);
+      setErro(`❌ Erro ao processar o arquivo .INP:\n\n${err.message}`);
     }
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>EPANET - Relatório da Rede</h1>
-      <input type="file" accept=".inp" onChange={handleFile} />
-      <pre
-        style={{
-          background: output.startsWith('❌') ? '#ffe6e6' : '#f2f2f2',
-          color: output.startsWith('❌') ? '#990000' : '#000',
-          padding: 10,
-          marginTop: 20,
-          border: output.startsWith('❌') ? '1px solid #ff4d4d' : '1px solid #ccc',
-          whiteSpace: 'pre-wrap',
-          overflowX: 'auto',
-          fontFamily: 'monospace'
-        }}
-      >
-        {output}
-      </pre>
-    </div>
+    <Box sx={{ p: 4, maxWidth: '1000px', mx: 'auto' }}>
+      <Typography variant="h4" align="center" gutterBottom color="primary">
+        🧪 EPANET - Relatório da Rede Hidráulica
+      </Typography>
+
+      <Box sx={{ textAlign: 'center', mb: 3 }}>
+        <label htmlFor="inpFile">
+          <Box
+            component="span"
+            sx={{
+              px: 3,
+              py: 1,
+              bgcolor: 'primary.main',
+              color: '#fff',
+              borderRadius: 2,
+              fontWeight: 'bold',
+              cursor: 'pointer'
+            }}
+          >
+            Selecionar Arquivo .INP
+          </Box>
+        </label>
+        <input
+          id="inpFile"
+          type="file"
+          accept=".inp"
+          onChange={handleFile}
+          style={{ display: 'none' }}
+        />
+      </Box>
+
+      {erro ? (
+        <Paper sx={{ p: 2, bgcolor: '#ffe6e6', color: '#b91c1c', border: '1px solid #f87171' }}>
+          <Typography variant="body1" component="pre" sx={{ whiteSpace: 'pre-wrap' }}>
+            {erro}
+          </Typography>
+        </Paper>
+      ) : dados.length > 0 ? (
+        <TableContainer component={Paper} sx={{ boxShadow: 3 }}>
+          <Table>
+            <TableHead>
+              <TableRow sx={{ bgcolor: '#f1f5f9' }}>
+                <TableCell><strong>ID</strong></TableCell>
+                <TableCell><strong>Node1</strong></TableCell>
+                <TableCell><strong>Node2</strong></TableCell>
+                <TableCell><strong>Comprimento</strong></TableCell>
+                <TableCell><strong>Diâmetro</strong></TableCell>
+                <TableCell><strong>Rugosidade</strong></TableCell>
+                <TableCell><strong>Vazão</strong></TableCell>
+                <TableCell><strong>Pressão (Node1)</strong></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {dados.map((row, index) => (
+                <TableRow
+                  key={row.id}
+                  sx={{
+                    bgcolor: index % 2 === 0 ? '#ffffff' : '#f9fafb',
+                    '&:hover': {
+                      backgroundColor: '#e0f2fe'
+                    }
+                  }}
+                >
+                  <TableCell>{row.id}</TableCell>
+                  <TableCell>{row.node1}</TableCell>
+                  <TableCell>{row.node2}</TableCell>
+                  <TableCell>{row.length.toFixed(2)}</TableCell>
+                  <TableCell>{row.diameter.toFixed(2)}</TableCell>
+                  <TableCell>{row.roughness.toFixed(2)}</TableCell>
+                  <TableCell>{row.flow.toFixed(2)}</TableCell>
+                  <TableCell>{row.pressure.toFixed(2)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      ) : (
+        <Typography align="center" sx={{ mt: 2 }}>📂 Nenhum arquivo carregado ainda.</Typography>
+      )}
+    </Box>
   );
 }
 
