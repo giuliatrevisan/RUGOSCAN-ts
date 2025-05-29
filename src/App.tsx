@@ -3,12 +3,13 @@ import {
   Project,
   Workspace,
   CountType,
-  LinkProperty
+  LinkProperty,
+  NodeProperty
 } from 'epanet-js';
 
 // Corrige a seção [PIPES]
 function corrigirRugosidadeINP(inpText: string, valorPadrao: number = 100): string {
-  const linhas = inpText.split(/\r?\n/);
+  const linhas: string[] = inpText.split(/\r?\n/);
   const resultado: string[] = [];
   let dentroDePipes = false;
 
@@ -22,7 +23,7 @@ function corrigirRugosidadeINP(inpText: string, valorPadrao: number = 100): stri
     }
 
     if (dentroDePipes && linhaTrim && !linhaTrim.startsWith(';')) {
-      const partes = linha.trim().split(/\s+/);
+      const partes: string[] = linha.trim().split(/\s+/);
       const id = partes[0] ?? '';
       const node1 = partes[1] ?? '';
       const node2 = partes[2] ?? '';
@@ -42,10 +43,9 @@ function corrigirRugosidadeINP(inpText: string, valorPadrao: number = 100): stri
 
 // Remove seções que estão vazias ou só têm comentários
 function limparSecoesVazias(inpText: string): string {
-  const linhas = inpText.split(/\r?\n/);
+  const linhas: string[] = inpText.split(/\r?\n/);
   const resultado: string[] = [];
 
-  let dentroDeSecao = false;
   let bufferSecao: string[] = [];
 
   function salvarSecaoSeValida() {
@@ -56,24 +56,17 @@ function limparSecoesVazias(inpText: string): string {
     bufferSecao = [];
   }
 
-  for (let linha of linhas) {
+  for (const linha of linhas) {
     if (linha.trim().startsWith('[') && linha.trim().endsWith(']')) {
       if (bufferSecao.length > 0) salvarSecaoSeValida();
-      dentroDeSecao = true;
     }
-
-    if (dentroDeSecao) {
-      bufferSecao.push(linha);
-    } else {
-      resultado.push(linha);
-    }
+    bufferSecao.push(linha);
   }
 
   if (bufferSecao.length > 0) salvarSecaoSeValida();
 
   return resultado.join('\n');
 }
-
 
 // Garante seções obrigatórias para o EPANET-WASM
 function garantirSecoesObrigatorias(inp: string): string {
@@ -103,9 +96,8 @@ function normalizarINP(original: string): string {
   return completo;
 }
 
-
 function App() {
-  const [output, setOutput] = useState('');
+  const [output, setOutput] = useState<string>('');
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -125,16 +117,32 @@ function App() {
       await project.solveH();
 
       const numLinks = await project.getCount(CountType.LinkCount);
-      let result = `Total de tubos: ${numLinks}\n\n`;
+      let result = `RELATÓRIO DE TUBOS\n\n`;
+      result += `| ID        | Node1    | Node2    | Comprimento | Diâmetro | Rugosidade | Vazão    | Pressão (Node1) |\n`;
+      result += `|-----------|----------|----------|-------------|----------|------------|----------|-----------------|\n`;
 
       for (let i = 1; i <= numLinks; i++) {
         const id = await project.getLinkId(i);
         const tipo = await project.getLinkType(i);
-        if (tipo === 0) {
-          const rug = await project.getLinkValue(i, LinkProperty.Roughness);
-          result += `Tubo ${id} - Rugosidade: ${rug.toFixed(3)}\n`;
-        }
+
+        // Debug - mostra os tipos dos links para entender o que está vindo
+        console.log(`Link ${i}: ID=${id}, Tipo=${tipo}`);
+
+        // Retira temporariamente o filtro para tipo (para ver se preenche)
+        // Se quiser filtrar só pipes, descomente abaixo:
+        // if (tipo !== 0) continue;
+
+        const nodes = await project.getLinkNodes(i);
+        const length = await project.getLinkValue(i, LinkProperty.Length) ?? 0;
+        const diameter = await project.getLinkValue(i, LinkProperty.Diameter) ?? 0;
+        const roughness = await project.getLinkValue(i, LinkProperty.Roughness) ?? 0;
+        const flow = await project.getLinkValue(i, LinkProperty.Flow) ?? 0;
+        const pressureNode1 = await project.getNodeValue(nodes.node1, NodeProperty.Pressure) ?? 0;
+
+        result += `| ${id.padEnd(9)} | ${nodes.node1.toString().padEnd(8)} | ${nodes.node2.toString().padEnd(8)} | ${length.toFixed(2).padStart(11)} | ${diameter.toFixed(2).padStart(8)} | ${roughness.toFixed(2).padStart(10)} | ${flow.toFixed(2).padStart(8)} | ${pressureNode1.toFixed(2).padStart(15)} |\n`;
       }
+
+      result += `\nTotal de tubos: ${numLinks}`;
 
       await project.close();
       setOutput(result);
@@ -146,7 +154,7 @@ function App() {
 
   return (
     <div style={{ padding: 20 }}>
-      <h1>EPANET - Análise de Rugosidade</h1>
+      <h1>EPANET - Relatório da Rede</h1>
       <input type="file" accept=".inp" onChange={handleFile} />
       <pre
         style={{
@@ -154,8 +162,10 @@ function App() {
           color: output.startsWith('❌') ? '#990000' : '#000',
           padding: 10,
           marginTop: 20,
-          border: output.startsWith('❌') ? '1px solid #ff4d4d' : 'none',
-          whiteSpace: 'pre-wrap'
+          border: output.startsWith('❌') ? '1px solid #ff4d4d' : '1px solid #ccc',
+          whiteSpace: 'pre-wrap',
+          overflowX: 'auto',
+          fontFamily: 'monospace'
         }}
       >
         {output}
